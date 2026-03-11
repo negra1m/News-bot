@@ -1,10 +1,10 @@
-# 🤖 Bot de Notícias — X → Discord
+# 🤖 Bot de Notícias — X → Discord (Twscrape)
 
-Monitora perfis do X (Twitter) via RSS (Nitter) e envia as novidades em um canal do Discord.
+Monitora perfis do X via Twscrape e envia novidades no Discord.
 
 ---
 
-## ⚙️ Configuração (3 passos)
+## ⚙️ Configuração
 
 ### 1. Instalar dependências
 ```bash
@@ -12,29 +12,32 @@ pip install -r requirements.txt
 ```
 
 ### 2. Criar o Webhook no Discord
-1. Abra o canal do Discord onde quer receber as notícias
-2. Clique em **Configurações do Canal** (ícone de engrenagem)
-3. Vá em **Integrações → Webhooks → Novo Webhook**
-4. Copie a URL do webhook
+1. Canal → **Configurações → Integrações → Webhooks → Novo Webhook**
+2. Copie a URL do webhook
 
-### 3. Editar o `bot.py`
-Abra `bot.py` e edite a seção `CONFIGURAÇÃO`:
+### 3. Criar uma conta secundária no X
+Recomendado criar uma conta só pra isso (ex: um email novo).
+Evita risco de suspender sua conta principal.
 
+### 4. Editar o `bot.py`
 ```python
-# Cole aqui a URL do webhook
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/..."
 
-# Perfis que você quer monitorar
-PROFILES = [
-    "Reuters",
-    "BBCBreaking",
-    "g1",
-    "folha",
-    # adicione quantos quiser...
+X_ACCOUNTS = [
+    {
+        "username": "minha_conta_bot",
+        "password": "minha_senha",
+        "email":    "email@exemplo.com",
+    },
 ]
 
-# Intervalo de verificação em segundos (padrão: 5 minutos)
-CHECK_INTERVAL = 300
+PROFILES = [
+    "CloudflareDev",
+    "Polymarket",
+    "claudeai",
+    "trq212",
+    "Reuters",
+]
 ```
 
 ---
@@ -42,51 +45,30 @@ CHECK_INTERVAL = 300
 ## ▶️ Executar
 
 ```bash
+# Normal
 python bot.py
+
+# Com logs detalhados
+python bot.py --debug
 ```
 
 ---
 
-## 🔄 Rodar em segundo plano (Linux/Mac)
+## 🔄 Rodar em segundo plano
 
 ```bash
-# Com nohup
+# Linux/Mac
 nohup python bot.py &
 
-# Ou com tmux
-tmux new -s newsbot
-python bot.py
-# Ctrl+B depois D para desatachar
-```
-
-## 🪟 Rodar em segundo plano (Windows)
-
-```powershell
-# Criar uma task agendada ou simplesmente:
+# Windows
 pythonw bot.py
-```
-
----
-
-## 📋 Como funciona
-
-```
-Perfis configurados
-       ↓
-  Nitter (RSS)          ← instâncias públicas gratuitas
-       ↓
-  Filtragem             ← remove respostas e RTs
-       ↓
-  Deduplicação          ← SQLite local (seen_posts.db)
-       ↓
-  Discord Webhook       ← embed com autor, texto e link
 ```
 
 ---
 
 ## ⚠️ Avisos
 
-- **Nitter** são instâncias públicas mantidas por voluntários e podem cair. O bot tenta múltiplas automaticamente.
-- O bot filtra respostas (`@alguem ...`) e retweets (`RT ...`) por padrão.
-- `seen_posts.db` é criado automaticamente na mesma pasta do bot.
-- Cada perfil envia no máximo **3 posts por rodada** para evitar spam (configurável via `MAX_POSTS_PER_PROFILE`).
+- Use uma **conta secundária** do X — nunca a principal
+- O Twscrape armazena o login em `accounts.db` na mesma pasta
+- Se a conta for suspensa, crie outra e atualize o `bot.py`
+- O bot ignora replies e retweets automaticamente
