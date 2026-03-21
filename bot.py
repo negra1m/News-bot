@@ -328,7 +328,7 @@ def fetch_rss(source: dict) -> list[dict]:
                 import calendar
                 pub_ts  = calendar.timegm(pub_parsed)
                 age_h   = (time.time() - pub_ts) / 3600
-                if age_h > 2:
+                if age_h > 24:
                     log(f"    [SKIP] Muito antigo ({age_h:.0f}h): {title[:50]}")
                     continue
 
