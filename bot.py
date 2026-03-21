@@ -71,6 +71,27 @@ NEWS_SOURCES = [
         "color": 0x0A7D3E,
         "rss":   "https://techcrunch.com/feed/",
     },
+    # ── BR ───────────────────────────────────────
+    {
+        "name":  "Tecnoblog",
+        "color": 0x0066CC,
+        "rss":   "https://tecnoblog.net/feed/",
+    },
+    {
+        "name":  "Canaltech",
+        "color": 0xFF5500,
+        "rss":   "https://canaltech.com.br/rss/",
+    },
+    {
+        "name":  "TecMundo",
+        "color": 0x00B4D8,
+        "rss":   "https://rss.tecmundo.com.br/feed",
+    },
+    {
+        "name":  "Olhar Digital",
+        "color": 0x7B2D8B,
+        "rss":   "https://olhardigital.com.br/feed/",
+    },
 ]
 
 # ─────────────────────────────────────────────
@@ -207,7 +228,8 @@ def is_in_queue(post_id: str) -> bool:
 # ─────────────────────────────────────────────
 
 # Fontes confiáveis — todo conteúdo é tech por definição
-TRUSTED_SOURCES = ["Cloudflare", "Replit", "Anthropic", "Perplexity"]
+TRUSTED_SOURCES = ["Cloudflare", "Replit", "Anthropic", "Perplexity",
+                   "Tecnoblog", "Canaltech", "TecMundo", "Olhar Digital"]
 
 # Para passar o filtro, o post PRECISA ter pelo menos uma dessas
 KEYWORDS_TECH = [
@@ -236,6 +258,11 @@ KEYWORDS_TECH = [
     # Outros temas tech
     "quantum computing", "robotics", "automation", "drone", "ev",
     "electric vehicle", "battery technology", "5g", "6g",
+    # PT-BR — fontes nativas já são trusted, mas cobre textos em português
+    "inteligência artificial", "ia generativa", "modelo de linguagem",
+    "startup", "unicórnio", "tecnologia", "aplicativo", "smartphone",
+    "cibersegurança", "hackers", "vazamento de dados", "chip", "processador",
+    "nuvem", "computação", "software", "hardware",
 ]
 
 # Qualquer post com essas palavras é BLOQUEADO, mesmo que tenha keywords tech
