@@ -1,683 +1,87 @@
 """
-Bot de Notícias → Discord
-- Blogs oficiais: ciclo de 15min, 1 post por fonte
-- Jornais tech: ciclo de 1h, 2 posts por fonte
-- Filtro de relevância: IA, tech, geopolítica que afeta tech
-- Comandos no Discord: !status, !forcenow, !pausar, !resumir, !fontes, !ajuda
-- Use --debug para logs detalhados
+Bot de Notícias + Transcrição de Reuniões → Discord
 """
 
-import feedparser
-import requests
-import sqlite3
-import time
-import random
-import hashlib
+import logging
 import sys
-import re
-import threading
+
+import discord
+from discord.ext import commands
 from datetime import datetime, timezone
-from pathlib import Path
 
-# ─────────────────────────────────────────────
-# CONFIGURAÇÃO GERAL
-# ─────────────────────────────────────────────
+from config import DISCORD_BOT_TOKEN, ANTHROPIC_API_KEY, BLOG_SOURCES, NEWS_SOURCES, DEBUG
+from db import init_db
 
-# Webhook para ENVIAR notícias
-DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/SEU_WEBHOOK_AQUI"
+# ─── Logging ─────────────────────────────────
+# Mostra logs do discord.voice pra debugar conexão
+logging.basicConfig(level=logging.INFO if DEBUG else logging.WARNING, stream=sys.stdout)
+logging.getLogger("discord.voice_state").setLevel(logging.DEBUG)
+logging.getLogger("discord.voice_client").setLevel(logging.DEBUG)
+logging.getLogger("discord.gateway").setLevel(logging.INFO)
 
-# Token do bot do Discord para LER comandos
-# Crie em: discord.com/developers → New Application → Bot → Token
-DISCORD_BOT_TOKEN = "SEU_BOT_TOKEN_AQUI"
+# ─── Estado global ───────────────────────────
 
-# ID do canal onde o bot vai ler comandos (clique direito no canal → Copiar ID)
-DISCORD_CHANNEL_ID = "SEU_CHANNEL_ID_AQUI"
-
-# ─────────────────────────────────────────────
-# FONTES — BLOGS (15min, 1 post por ciclo)
-# ─────────────────────────────────────────────
-
-BLOG_SOURCES = [
-    {
-        "name":  "Cloudflare Blog",
-        "color": 0xF6821F,
-        "rss":   "https://blog.cloudflare.com/rss/",
-    },
-    {
-        "name":  "Anthropic News",
-        "color": 0xCC785C,
-        "rss":   "https://raw.githubusercontent.com/Olshansk/rss-feeds/main/feeds/feed_anthropic_news.xml",
-    },
-    {
-        "name":  "Replit Blog",
-        "color": 0xF26207,
-        "rss":   "https://blog.replit.com/feed.xml",
-    },
-
-]
-
-# ─────────────────────────────────────────────
-# FONTES — JORNAIS (1h, 2 posts por ciclo)
-# ─────────────────────────────────────────────
-
-NEWS_SOURCES = [
-    {
-        "name":  "Reuters Technology",
-        "color": 0xFF6B6B,
-        "rss":   "https://feeds.reuters.com/reuters/technology",
-    },
-    {
-        "name":  "TechCrunch",
-        "color": 0x0A7D3E,
-        "rss":   "https://techcrunch.com/feed/",
-    },
-    # ── BR ───────────────────────────────────────
-    {
-        "name":  "Tecnoblog",
-        "color": 0x0066CC,
-        "rss":   "https://tecnoblog.net/feed/",
-    },
-    {
-        "name":  "Canaltech",
-        "color": 0xFF5500,
-        "rss":   "https://canaltech.com.br/rss/",
-    },
-    {
-        "name":  "TecMundo",
-        "color": 0x00B4D8,
-        "rss":   "https://rss.tecmundo.com.br/feed",
-    },
-    {
-        "name":  "Olhar Digital",
-        "color": 0x7B2D8B,
-        "rss":   "https://olhardigital.com.br/feed/",
-    },
-]
-
-# ─────────────────────────────────────────────
-# INTERVALOS
-# ─────────────────────────────────────────────
-
-BLOG_CYCLE_INTERVAL  = 3600  # 1 hora
-NEWS_CYCLE_INTERVAL  = 3600  # 1 hora
-BLOG_MAX_POSTS       = 1
-NEWS_MAX_POSTS       = 1
-DELAY_BETWEEN        = 5
-RANDOM_EXTRA_DELAY   = 5
-
-DB_PATH = Path(__file__).parent / "seen_posts.db"
-DEBUG   = "--debug" in sys.argv
-
-# Estado global
 state = {
-    "paused":         False,
-    "force_now":      False,
-    "start_time":     datetime.now(timezone.utc),
+    "paused":          False,
+    "force_now":       False,
+    "start_time":      datetime.now(timezone.utc),
     "last_blog_cycle": None,
     "last_news_cycle": None,
-    "total_sent":     0,
+    "total_sent":      0,
     "news_source_idx": 0,
 }
 
-def log(msg):
-    if DEBUG:
-        print(msg)
+voice_session = {
+    "vc":           None,
+    "pcm_buffers":  {},
+    "text_channel": None,
+    "start_time":   None,
+    "active":       False,
+}
 
-# ─────────────────────────────────────────────
-# BANCO DE DADOS
-# ─────────────────────────────────────────────
+# ─── Bot setup ───────────────────────────────
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS seen (
-            id        TEXT PRIMARY KEY,
-            source    TEXT NOT NULL,
-            title     TEXT,
-            link      TEXT,
-            posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS queue (
-            id          TEXT PRIMARY KEY,
-            source      TEXT NOT NULL,
-            title       TEXT,
-            link        TEXT,
-            description TEXT,
-            image       TEXT,
-            color       INTEGER,
-            published   TEXT,
-            queued_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+intents = discord.Intents.default()
+intents.message_content = True
+intents.voice_states    = True
 
-def is_seen(post_id: str) -> bool:
-    conn   = sqlite3.connect(DB_PATH)
-    result = conn.execute("SELECT 1 FROM seen WHERE id = ?", (post_id,)).fetchone()
-    conn.close()
-    return result is not None
-
-def mark_seen(post_id: str, source: str, title: str, link: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR IGNORE INTO seen (id, source, title, link) VALUES (?, ?, ?, ?)",
-        (post_id, source, title, link)
-    )
-    conn.commit()
-    conn.close()
-
-def count_seen(source: str) -> int:
-    conn = sqlite3.connect(DB_PATH)
-    n    = conn.execute("SELECT COUNT(*) FROM seen WHERE source = ?", (source,)).fetchone()[0]
-    conn.close()
-    return n
-
-def count_total_seen() -> int:
-    conn = sqlite3.connect(DB_PATH)
-    n    = conn.execute("SELECT COUNT(*) FROM seen").fetchone()[0]
-    conn.close()
-    return n
-
-def enqueue(post: dict):
-    """Adiciona post à fila se ainda não foi visto nem está na fila."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        INSERT OR IGNORE INTO queue (id, source, title, link, description, image, color, published)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (post["id"], post["source"], post["title"], post["link"],
-          post.get("description",""), post.get("image",""),
-          post.get("color", 0), post.get("published","")))
-    conn.commit()
-    conn.close()
-
-def dequeue() -> dict | None:
-    """Pega o próximo post da fila (mais antigo primeiro)."""
-    conn = sqlite3.connect(DB_PATH)
-    row  = conn.execute("""
-        SELECT id, source, title, link, description, image, color, published
-        FROM queue ORDER BY queued_at ASC LIMIT 1
-    """).fetchone()
-    if row:
-        conn.execute("DELETE FROM queue WHERE id = ?", (row[0],))
-        conn.commit()
-    conn.close()
-    if not row:
-        return None
-    return {
-        "id": row[0], "source": row[1], "title": row[2], "link": row[3],
-        "description": row[4], "image": row[5], "color": row[6], "published": row[7]
-    }
-
-def count_queue() -> int:
-    conn = sqlite3.connect(DB_PATH)
-    n    = conn.execute("SELECT COUNT(*) FROM queue").fetchone()[0]
-    conn.close()
-    return n
-
-def is_in_queue(post_id: str) -> bool:
-    conn   = sqlite3.connect(DB_PATH)
-    result = conn.execute("SELECT 1 FROM queue WHERE id = ?", (post_id,)).fetchone()
-    conn.close()
-    return result is not None
-
-# ─────────────────────────────────────────────
-# FILTRO DE RELEVÂNCIA
-# ─────────────────────────────────────────────
-
-# Fontes confiáveis — todo conteúdo é tech por definição
-TRUSTED_SOURCES = ["Cloudflare", "Replit", "Anthropic", "Perplexity",
-                   "Tecnoblog", "Canaltech", "TecMundo", "Olhar Digital"]
-
-# Para passar o filtro, o post PRECISA ter pelo menos uma dessas
-KEYWORDS_TECH = [
-    # IA e modelos
-    "ai", "artificial intelligence", "machine learning", "deep learning",
-    "llm", "gpt", "claude", "gemini", "copilot", "chatbot", "neural network",
-    "model", "inference", "fine-tuning", "embedding", "agent", "rag",
-    "generative", "diffusion", "transformer",
-    # Desenvolvimento e infraestrutura
-    "api", "sdk", "open source", "developer", "programming", "code",
-    "cloud", "serverless", "edge computing", "kubernetes", "docker",
-    "devops", "cicd", "database", "backend", "frontend", "framework",
-    # Produtos e empresas tech
-    "openai", "anthropic", "google deepmind", "microsoft", "meta ai",
-    "nvidia", "cloudflare", "replit", "vercel", "aws", "azure", "gcp",
-    "apple", "tesla", "spacex", "palantir", "databricks",
-    "software", "hardware", "chip", "semiconductor", "gpu", "processor",
-    "startup", "tech funding", "series a", "series b", "acquisition",
-    # Segurança e privacidade
-    "cybersecurity", "data breach", "vulnerability", "encryption",
-    "zero-day", "ransomware", "malware", "phishing",
-    # Geopolítica SÓ quando afeta tech
-    "tech tariff", "chip ban", "semiconductor export", "tech sanction",
-    "ai regulation", "tech antitrust", "data privacy law", "gdpr",
-    "tech war", "chip supply chain",
-    # Outros temas tech
-    "quantum computing", "robotics", "automation", "drone", "ev",
-    "electric vehicle", "battery technology", "5g", "6g",
-    # PT-BR — fontes nativas já são trusted, mas cobre textos em português
-    "inteligência artificial", "ia generativa", "modelo de linguagem",
-    "startup", "unicórnio", "tecnologia", "aplicativo", "smartphone",
-    "cibersegurança", "hackers", "vazamento de dados", "chip", "processador",
-    "nuvem", "computação", "software", "hardware",
-]
-
-# Qualquer post com essas palavras é BLOQUEADO, mesmo que tenha keywords tech
-KEYWORDS_BLOCK = [
-    "sports", "football", "soccer", "basketball", "baseball", "tennis", "nfl", "nba",
-    "celebrity", "actor", "actress", "singer", "rapper", "kardashian",
-    "entertainment", "box office", "grammy", "oscar", "emmy",
-    "fashion", "beauty", "makeup", "skincare", "luxury",
-    "cooking", "recipe", "restaurant", "food review",
-    "travel", "tourism", "hotel", "vacation",
-    "weather", "horoscope", "zodiac", "astrology",
-    "reality tv", "dating show",
-]
-
-def is_relevant(post: dict) -> bool:
-    """Só passa posts genuinamente de tecnologia."""
-    text = (post.get("title", "") + " " + post.get("description", "")).lower()
-
-    # Bloqueia categorias irrelevantes primeiro
-    for kw in KEYWORDS_BLOCK:
-        if kw in text:
-            log(f"    [FILTRO] Bloqueado: '{kw}' — {post['title'][:60]}")
-            return False
-
-    # Fontes 100% tech — passa direto
-    if any(name in post.get("source", "") for name in TRUSTED_SOURCES):
-        return True
-
-    # Para Reuters e TechCrunch — exige keyword tech obrigatoriamente
-    for kw in KEYWORDS_TECH:
-        if kw in text:
-            return True
-
-    log(f"    [FILTRO] Sem keyword tech: {post['title'][:60]}")
-    return False
-
-# ─────────────────────────────────────────────
-# RSS
-# ─────────────────────────────────────────────
-
-def make_post_id(entry) -> str:
-    raw = entry.get("id") or entry.get("link", "")
-    return hashlib.md5(raw.encode()).hexdigest()
-
-def get_post_image(entry) -> str | None:
-    if hasattr(entry, 'media_thumbnail') and entry.media_thumbnail:
-        return entry.media_thumbnail[0].get('url')
-    if hasattr(entry, 'media_content') and entry.media_content:
-        for m in entry.media_content:
-            if m.get('type', '').startswith('image'):
-                return m.get('url')
-    if hasattr(entry, 'enclosures') and entry.enclosures:
-        for e in entry.enclosures:
-            if 'image' in e.get('type', ''):
-                return e.get('href')
-    summary = entry.get('summary', '') or ''
-    match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', summary)
-    if match:
-        return match.group(1)
-    return None
-
-def get_post_description(entry) -> str:
-    summary = entry.get('summary', '') or ''
-    if entry.get('content'):
-        summary = entry.content[0].get('value', summary)
-    clean = re.sub(r'<[^>]+>', '', summary).strip()
-    return clean[:200] + '...' if len(clean) > 200 else clean
-
-def fetch_rss(source: dict) -> list[dict]:
-    log(f"    [RSS] {source['rss']}")
-    try:
-        feed = feedparser.parse(source["rss"])
-        if not feed.entries:
-            print(f"    [WARN] Feed vazio: {source['name']}")
-            return []
-        posts = []
-        for entry in feed.entries:
-            post_id     = make_post_id(entry)
-            title       = re.sub(r"<[^>]+>", "", entry.get("title", "")).strip()
-            link        = entry.get("link", "")
-            published   = entry.get("published", "")
-            image       = get_post_image(entry)
-            description = get_post_description(entry)
-            if not title:
-                continue
-
-            # Filtra posts com mais de 24h
-            pub_parsed = entry.get("published_parsed")
-            if pub_parsed:
-                import calendar
-                pub_ts  = calendar.timegm(pub_parsed)
-                age_h   = (time.time() - pub_ts) / 3600
-                if age_h > 24:
-                    log(f"    [SKIP] Muito antigo ({age_h:.0f}h): {title[:50]}")
-                    continue
-
-            posts.append({
-                "id":          post_id,
-                "source":      source["name"],
-                "color":       source["color"],
-                "title":       title,
-                "link":        link,
-                "published":   published,
-                "image":       image,
-                "description": description,
-            })
-        log(f"    [RSS] {len(posts)} posts nas últimas 24h")
-        return posts
-    except Exception as e:
-        print(f"    [ERROR] {source['name']}: {e}")
-        return []
-
-# ─────────────────────────────────────────────
-# DISCORD — ENVIO
-# ─────────────────────────────────────────────
-
-def send_to_discord(post: dict) -> bool:
-    embed = {
-        "author":    {"name": post["source"]},
-        "title":     post["title"][:256],
-        "url":       post["link"],
-        "color":     post["color"],
-        "footer":    {"text": post.get("published", "")},
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    if post.get("description"):
-        embed["description"] = post["description"]
-    if post.get("image"):
-        embed["image"] = {"url": post["image"]}
-
-    try:
-        resp = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json={"embeds": [embed]},
-            timeout=10
-        )
-        time.sleep(0.5)
-        if resp.status_code in (200, 204):
-            return True
-        print(f"    [ERROR] Discord {resp.status_code}: {resp.text[:200]}")
-        return False
-    except Exception as e:
-        print(f"    [ERROR] {e}")
-        return False
-
-def send_command_response(message: str, color: int = 0x5865F2):
-    """Envia uma resposta de comando como embed no Discord."""
-    embed = {
-        "description": message,
-        "color":       color,
-        "footer":      {"text": "News Bot"},
-        "timestamp":   datetime.now(timezone.utc).isoformat(),
-    }
-    try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
-    except Exception as e:
-        print(f"[ERROR] Falha ao responder comando: {e}")
-
-# ─────────────────────────────────────────────
-# DISCORD — COMANDOS
-# ─────────────────────────────────────────────
-
-def get_discord_messages(after_id: str = None) -> list[dict]:
-    """Busca mensagens recentes do canal."""
-    headers = {"Authorization": f"Bot {DISCORD_BOT_TOKEN}"}
-    params  = {"limit": 10}
-    if after_id:
-        params["after"] = after_id
-    try:
-        resp = requests.get(
-            f"https://discord.com/api/v10/channels/{DISCORD_CHANNEL_ID}/messages",
-            headers=headers,
-            params=params,
-            timeout=10
-        )
-        if resp.status_code == 200:
-            return resp.json()
-    except Exception as e:
-        log(f"[CMD] Erro ao buscar mensagens: {e}")
-    return []
-
-def handle_command(cmd: str):
-    cmd = cmd.strip().lower()
-    print(f"[CMD] Recebido: {cmd}")
-
-    if cmd == "!ajuda":
-        send_command_response(
-            "**📋 Comandos disponíveis**\n"
-            "`!status` — situação atual do bot\n"
-            "`!forcenow` — forçar ciclo imediatamente\n"
-            "`!pausar` — pausar envio de notícias\n"
-            "`!resumir` — retomar envio\n"
-            "`!fontes` — listar fontes ativas\n"
-            "`!ajuda` — mostrar esta mensagem"
-        )
-
-    elif cmd == "!status":
-        uptime    = datetime.now(timezone.utc) - state["start_time"]
-        horas     = int(uptime.total_seconds() // 3600)
-        minutos   = int((uptime.total_seconds() % 3600) // 60)
-        pausado   = "⏸ Pausado" if state["paused"] else "▶️ Rodando"
-        last_blog = state["last_blog_cycle"].strftime("%H:%M:%S") if state["last_blog_cycle"] else "—"
-        last_news = state["last_news_cycle"].strftime("%H:%M:%S") if state["last_news_cycle"] else "—"
-        send_command_response(
-            f"**🤖 Status do Bot**\n"
-            f"Estado: {pausado}\n"
-            f"Uptime: {horas}h {minutos}min\n"
-            f"Notícias enviadas: {state['total_sent']}\n"
-            f"No banco: {count_total_seen()} | Na fila: {count_queue()}\n"
-            f"Último ciclo blogs: {last_blog}\n"
-            f"Último ciclo jornais: {last_news}",
-            color=0x51CF66 if not state["paused"] else 0xFCC419
-        )
-
-    elif cmd == "!forcenow":
-        state["force_now"] = True
-        send_command_response("⚡ Ciclo forçado! Verificando fontes agora...")
-
-    elif cmd == "!pausar":
-        state["paused"] = True
-        send_command_response("⏸ Bot pausado. Use `!resumir` para continuar.", color=0xFCC419)
-
-    elif cmd == "!resumir":
-        state["paused"] = False
-        send_command_response("▶️ Bot retomado!", color=0x51CF66)
-
-    elif cmd == "!fontes":
-        blogs = "\n".join(f"• {s['name']} (15min)" for s in BLOG_SOURCES)
-        news  = "\n".join(f"• {s['name']} (1h)" for s in NEWS_SOURCES)
-        send_command_response(
-            f"**📡 Fontes ativas**\n\n"
-            f"**Blogs** (1 post/15min)\n{blogs}\n\n"
-            f"**Jornais** (2 posts/1h)\n{news}"
-        )
-
-def poll_commands():
-    """Thread que fica verificando comandos no Discord a cada 5s."""
-    last_message_id = None
-    print("[CMD] Listener de comandos iniciado")
-
-    # Pega o ID da última mensagem pra não reprocessar antigas
-    msgs = get_discord_messages()
-    if msgs:
-        last_message_id = msgs[0]["id"]
-
-    while True:
-        time.sleep(5)
-        try:
-            msgs = get_discord_messages(after_id=last_message_id)
-            for msg in reversed(msgs):
-                last_message_id = msg["id"]
-                content = msg.get("content", "").strip()
-                if content.startswith("!"):
-                    handle_command(content)
-        except Exception as e:
-            log(f"[CMD] Erro no poll: {e}")
-
-# ─────────────────────────────────────────────
-# LÓGICA DE CICLO
-# ─────────────────────────────────────────────
-
-def process_source(source: dict, max_posts: int) -> int:
-    """Busca posts novos, enfileira os relevantes, envia max_posts da fila."""
-    posts = fetch_rss(source)
-
-    # Enfileira posts novos e relevantes das últimas 24h
-    enqueued = 0
-    for p in posts:
-        if not is_seen(p["id"]) and not is_in_queue(p["id"]) and is_relevant(p):
-            enqueue(p)
-            enqueued += 1
-        elif not is_seen(p["id"]) and not is_in_queue(p["id"]):
-            # Marca irrelevantes como vistos pra não verificar de novo
-            mark_seen(p["id"], p["source"], p.get("title",""), p.get("link",""))
-
-    if enqueued:
-        log(f"    [FILA] {enqueued} post(s) adicionado(s) | {count_queue()} na fila total")
-
-    # Envia max_posts da fila
-    sent = 0
-    for _ in range(max_posts):
-        post = dequeue()
-        if not post:
-            break
-        ok = send_to_discord(post)
-        if ok:
-            mark_seen(post["id"], post["source"], post["title"], post["link"])
-            print(f"    ✓ {post['title'][:80]}")
-            sent += 1
-            state["total_sent"] += 1
-        else:
-            # Volta pra fila se falhou
-            enqueue(post)
-            print(f"    ✗ Falha (voltou pra fila): {post['title'][:60]}")
-
-    if sent == 0:
-        q = count_queue()
-        print(f"    — Nada enviado {'| ' + str(q) + ' na fila' if q else '| fila vazia'}")
-
-    return sent
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 
-def run_blog_cycle():
-    now = datetime.now().strftime("%H:%M:%S")
-    print(f"\n{'─'*52}")
-    print(f"  [BLOGS] Ciclo às {now}")
-    print(f"{'─'*52}")
-    total = 0
-    sources = BLOG_SOURCES[:]
-    random.shuffle(sources)
-    for i, source in enumerate(sources):
-        print(f"\n  [{i+1}/{len(sources)}] {source['name']}")
-        total += process_source(source, BLOG_MAX_POSTS)
-        if i < len(sources) - 1:
-            wait = DELAY_BETWEEN + random.randint(0, RANDOM_EXTRA_DELAY)
-            print(f"    ⏳ {wait}s...")
-            time.sleep(wait)
-    state["last_blog_cycle"] = datetime.now()
-    print(f"\n  Blogs: {total} post(s) enviado(s)")
-
-
-def run_news_cycle():
-    now = datetime.now().strftime("%H:%M:%S")
-
-    # Alterna entre as fontes de jornal a cada ciclo
-    idx    = state["news_source_idx"] % len(NEWS_SOURCES)
-    source = NEWS_SOURCES[idx]
-    state["news_source_idx"] += 1
-
-    print(f"\n{'='*52}")
-    print(f"  [JORNAIS] Ciclo às {now} — {source['name']}")
-    print(f"{'='*52}")
-
-    posts = fetch_rss(source)
-    new   = [p for p in posts if not is_seen(p["id"]) and is_relevant(p)]
-    log(f"    [COMPARE] {len(posts)} RSS | {len(new)} novos relevantes")
-
-    if not new:
-        print(f"    — Nada novo em {source['name']}")
-        state["last_news_cycle"] = datetime.now()
-        return
-
-    post = new[0]  # 1 notícia por ciclo
-    ok   = send_to_discord(post)
-    if ok:
-        mark_seen(post["id"], post["source"], post["title"], post["link"])
-        print(f"  ✓ [{post['source']}] {post['title'][:70]}")
-        state["total_sent"] += 1
-    else:
-        print(f"  ✗ Falha: {post['title'][:60]}")
-
-    state["last_news_cycle"] = datetime.now()
-    print(f"\n  Próximo jornal: {NEWS_SOURCES[(idx+1) % len(NEWS_SOURCES)]['name']}")
-
-# ─────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────
-
-def main():
-    print("=" * 52)
-    print("  Bot de Notícias → Discord")
-    print("=" * 52)
-    print(f"Blogs  : {len(BLOG_SOURCES)} fontes, 1 post a cada 15min")
-    print(f"Jornais: {len(NEWS_SOURCES)} fontes, 2 posts a cada 1h")
-    print(f"Comandos: !ajuda !status !forcenow !pausar !resumir !fontes")
-    print(f"Debug  : {'sim' if DEBUG else 'não (use --debug)'}")
-    print()
-
+@bot.event
+async def on_ready():
+    print(f"[BOT] Logado como {bot.user} ({bot.user.id})")
     init_db()
 
-    # Inicia thread de comandos se o token estiver configurado
-    if DISCORD_BOT_TOKEN != "SEU_BOT_TOKEN_AQUI":
-        t = threading.Thread(target=poll_commands, daemon=True)
-        t.start()
-    else:
-        print("[WARN] DISCORD_BOT_TOKEN não configurado — comandos desativados")
+    # Registra cogs (async no discord.py 2.7+)
+    from cogs.rss import RSSCog
+    from cogs.text_commands import TextCommandsCog
+    from cogs.voice import VoiceCog
 
-    # Próximos ciclos agendados
-    next_blog_run = time.time()                        # roda imediatamente
-    next_news_run = time.time() + NEWS_CYCLE_INTERVAL  # espera 1h
+    if not bot.get_cog("RSSCog"):
+        await bot.add_cog(RSSCog(bot, state))
+    if not bot.get_cog("TextCommandsCog"):
+        await bot.add_cog(TextCommandsCog(bot, state, voice_session))
+    if not bot.get_cog("VoiceCog"):
+        await bot.add_cog(VoiceCog(bot, voice_session))
 
-    while True:
-        if state["paused"] and not state["force_now"]:
-            time.sleep(10)
-            continue
+    print("[BOT] Cogs carregados. Pronto.")
 
-        now   = time.time()
-        force = state["force_now"]
-        if force:
-            state["force_now"] = False
 
-        # Ciclo de blogs
-        if now >= next_blog_run or force:
-            try:
-                run_blog_cycle()
-            except Exception as e:
-                print(f"[ERROR] Blogs: {e}")
-            next_blog_run = time.time() + BLOG_CYCLE_INTERVAL
-            next_blog_str = datetime.fromtimestamp(next_blog_run).strftime("%H:%M:%S")
-            print(f"  Próximo ciclo de blogs às {next_blog_str}")
-
-        # Ciclo de jornais — só depois de 1h, nunca junto com blogs
-        elif now >= next_news_run:
-            try:
-                run_news_cycle()
-            except Exception as e:
-                print(f"[ERROR] Jornais: {e}")
-            next_news_run = time.time() + NEWS_CYCLE_INTERVAL
-            next_news_str = datetime.fromtimestamp(next_news_run).strftime("%H:%M:%S")
-            print(f"  Próximo ciclo de jornais às {next_news_str}")
-
-        time.sleep(10)
+# ─── Main ────────────────────────────────────
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nBot encerrado.")
+    if not DISCORD_BOT_TOKEN:
+        print("[ERRO] DISCORD_BOT_TOKEN não configurado.")
+        sys.exit(1)
+
+    print("=" * 52)
+    print("  Bot de Notícias + Transcrição de Reuniões")
+    print("=" * 52)
+    print(f"Blogs  : {len(BLOG_SOURCES)} fontes, 1 post/h")
+    print(f"Jornais: {len(NEWS_SOURCES)} fontes, 1 post rotativo/h")
+    print(f"Whisper: faster-whisper local (modelo small, CPU)")
+    print(f"Claude : {'✓' if ANTHROPIC_API_KEY else '✗'}")
+    print(f"Debug  : {'sim' if DEBUG else 'não (use --debug)'}")
+    print()
+    bot.run(DISCORD_BOT_TOKEN)

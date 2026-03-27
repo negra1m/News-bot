@@ -1,2 +1,9 @@
-twscrape
+feedparser
 requests
+discord.py[voice]>=2.7.0
+PyNaCl
+cryptography
+anthropic
+numpy
+faster-whisper
+discord-ext-voice-recv @ git+https://github.com/imayhaveborkedit/discord-ext-voice-recv@main
