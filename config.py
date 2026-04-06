@@ -75,16 +75,19 @@ KEYWORDS_BLOCK = [
 ]
 
 # ─── Oportunidades de projeto (JONES) ────────
+# Workana/99freelas/Upwork não têm RSS público — fontes validadas:
 OPPORTUNITIES_SOURCES = [
-    {"name": "Workana BR",  "color": 0xF39C12,
-     "rss": "https://www.workana.com/jobs.rss?language=pt&category=it-programming"},
-    {"name": "Upwork Dev",  "color": 0x14A800,
-     "rss": "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&category2_uid=531770282580668418"},
+    {"name": "RemoteOK",          "color": 0x00B894,
+     "rss": "https://remoteok.com/remote-dev-jobs.rss"},
+    {"name": "We Work Remotely",  "color": 0x6C5CE7,
+     "rss": "https://weworkremotely.com/categories/remote-programming-jobs.rss"},
+    {"name": "Jobicy Dev",        "color": 0x0984E3,
+     "rss": "https://jobicy.com/?feed=job_feed&job_categories=engineering"},
 ]
 
 KEYWORDS_OPPORTUNITIES = [
     "react", "python", "node", "typescript", "next", "vue", "django", "flask",
-    "mobile", "aplicativo", "app", "api", "backend", "frontend", "fullstack",
-    "desenvolvimento web", "sistema", "landing page", "e-commerce", "website",
-    "software", "web", "javascript", "php", "laravel",
+    "mobile", "app", "api", "backend", "frontend", "fullstack", "full-stack",
+    "website", "software", "javascript", "php", "laravel", "developer", "engineer",
+    "web", "ios", "android", "kotlin", "swift", "ruby", "rails",
 ]
