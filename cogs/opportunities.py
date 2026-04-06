@@ -1,19 +1,22 @@
 """
 Cog JONES — Oportunidades de projeto.
-Monitora Workana BR, 99Freelas e outras fontes a cada 4h.
-Posta leads relevantes no canal #oportunidades.
+Monitora RemoteOK, We Work Remotely e Jobicy a cada 4h.
+Posta via webhook do JONES no canal #oportunidades.
 """
 
 import asyncio
 import hashlib
 import re
+import time
 
 import feedparser
+import requests
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timezone
 
 import runtime_config
+from config import OPORTUNIDADES_WEBHOOK_URL
 from db import is_seen, mark_seen
 
 
@@ -77,6 +80,31 @@ def fetch_opportunities(source: dict, keywords: list) -> list:
         print(f"[OPP ERROR] {source['name']}: {e}")
         return []
 
+def _send_webhook(post: dict, webhook_url: str) -> bool:
+    """Envia via webhook — aparece como JONES no Discord."""
+    lines = [f"🔧 **Projeto:** {post['title']}"]
+    if post.get("skills"):
+        lines.append(f"👥 **Precisamos de:** {post['skills']}")
+    if post.get("budget"):
+        lines.append(f"💰 **Orçamento:** {post['budget']}")
+    lines.append(f"📣 **Contato:** {post['link']}")
+    if post.get("description"):
+        lines.append(f"\n**Descrição:**\n{post['description']}")
+
+    embed = {
+        "description": "\n".join(lines),
+        "color":       post["color"],
+        "footer":      {"text": f"{post['source']} • {post.get('published', '')}"},
+        "timestamp":   datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        time.sleep(0.5)
+        return resp.status_code in (200, 204)
+    except Exception as e:
+        print(f"[OPP WEBHOOK ERROR] {e}")
+        return False
+
 
 # ─── Cog ─────────────────────────────────────
 
@@ -87,24 +115,22 @@ class OpportunitiesCog(commands.Cog):
     async def cog_load(self):
         if not self.opp_task.is_running():
             self.opp_task.start()
-        print("[OPP] Ciclo de oportunidades iniciado (4h).")
+        wh = OPORTUNIDADES_WEBHOOK_URL
+        status = "webhook OK" if wh else "SEM WEBHOOK — configure OPORTUNIDADES_WEBHOOK_URL"
+        print(f"[OPP] Ciclo de oportunidades iniciado (4h). {status}")
 
     @tasks.loop(hours=4)
     async def opp_task(self):
-        channel_id = runtime_config.get_opp_channel_id()
-        if not channel_id:
+        if not OPORTUNIDADES_WEBHOOK_URL:
+            print("[OPP] OPORTUNIDADES_WEBHOOK_URL não configurado.")
             return
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            print("[OPP] Canal oportunidades não encontrado.")
-            return
-        await self._buscar_e_enviar(channel)
+        await self._buscar_e_enviar()
 
     @opp_task.before_loop
     async def before_opp(self):
         await self.bot.wait_until_ready()
 
-    async def _buscar_e_enviar(self, channel) -> int:
+    async def _buscar_e_enviar(self) -> int:
         sources  = runtime_config.get_opp_sources()
         keywords = runtime_config.get_opp_keywords()
         loop     = asyncio.get_event_loop()
@@ -112,46 +138,31 @@ class OpportunitiesCog(commands.Cog):
         for source in sources:
             posts = await loop.run_in_executor(None, fetch_opportunities, source, keywords)
             for post in posts:
-                try:
-                    await self._send_embed(channel, post)
+                ok = await loop.run_in_executor(
+                    None, _send_webhook, post, OPORTUNIDADES_WEBHOOK_URL)
+                if ok:
                     mark_seen(post["id"], post["source"], post["title"], post["link"])
+                    print(f"  [OPP] ✓ {post['title'][:70]}")
                     total += 1
                     await asyncio.sleep(1)
-                except Exception as e:
-                    print(f"[OPP ERROR] send: {e}")
         return total
-
-    async def _send_embed(self, channel, post: dict):
-        lines = [f"🔧 **Projeto:** {post['title']}"]
-        if post.get("skills"):
-            lines.append(f"👥 **Precisamos de:** {post['skills']}")
-        if post.get("budget"):
-            lines.append(f"💰 **Orçamento:** {post['budget']}")
-        lines.append(f"📣 **Contato:** <{post['link']}>")
-        if post.get("description"):
-            lines.append(f"\n**Descrição:**\n{post['description']}")
-
-        embed = discord.Embed(
-            description="\n".join(lines),
-            color=post["color"],
-            timestamp=datetime.now(timezone.utc),
-        )
-        embed.set_footer(text=f"{post['source']} • {post.get('published', '')}")
-        await channel.send(embed=embed)
 
     @commands.command(name="oportunidades")
     async def cmd_oportunidades(self, ctx):
-        """Força busca imediata de oportunidades."""
-        channel_id = runtime_config.get_opp_channel_id()
-        dest = self.bot.get_channel(channel_id) if channel_id else ctx.channel
+        """Força busca imediata de oportunidades via JONES."""
+        if not OPORTUNIDADES_WEBHOOK_URL:
+            await ctx.send(embed=discord.Embed(
+                description="❌ `OPORTUNIDADES_WEBHOOK_URL` não configurado no .env.",
+                color=0xFF4444, timestamp=datetime.now(timezone.utc)))
+            return
 
         await ctx.send(embed=discord.Embed(
             description="🔍 Buscando oportunidades agora...",
             color=0xF39C12, timestamp=datetime.now(timezone.utc)))
 
-        total = await self._buscar_e_enviar(dest or ctx.channel)
+        total = await self._buscar_e_enviar()
 
-        msg = f"✅ **{total}** oportunidade(s) nova(s) encontrada(s)." if total \
+        msg = f"✅ **{total}** oportunidade(s) nova(s) postada(s) pelo JONES." if total \
               else "— Nenhuma oportunidade nova no momento."
         await ctx.send(embed=discord.Embed(
             description=msg,
