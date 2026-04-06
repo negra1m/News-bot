@@ -138,8 +138,7 @@ class RSSCog(commands.Cog):
         self.bot   = bot
         self.state = state
 
-    @commands.Cog.listener()
-    async def on_ready(self):
+    async def cog_load(self):
         if not self.blog_task.is_running():
             self.blog_task.start()
         if not self.news_task.is_running():
@@ -173,7 +172,7 @@ class RSSCog(commands.Cog):
     @news_task.before_loop
     async def before_news(self):
         await self.bot.wait_until_ready()
-        await asyncio.sleep(NEWS_CYCLE_INTERVAL)
+        await asyncio.sleep(60)  # pequeno stagger em relação ao blog
 
     def _run_blog_cycle(self):
         now = datetime.now().strftime("%H:%M:%S")

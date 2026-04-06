@@ -3,10 +3,11 @@ import sys
 from pathlib import Path
 
 # ─── Variáveis de ambiente ───────────────────
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
-DISCORD_BOT_TOKEN   = os.getenv("DISCORD_BOT_TOKEN", "")
-DISCORD_CHANNEL_ID  = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
-ANTHROPIC_API_KEY   = os.getenv("ANTHROPIC_API_KEY", "")
+DISCORD_WEBHOOK_URL      = os.getenv("DISCORD_WEBHOOK_URL", "")
+DISCORD_BOT_TOKEN        = os.getenv("DISCORD_BOT_TOKEN", "")
+DISCORD_CHANNEL_ID       = int(os.getenv("DISCORD_CHANNEL_ID", "0"))
+ANTHROPIC_API_KEY        = os.getenv("ANTHROPIC_API_KEY", "")
+OPORTUNIDADES_CHANNEL_ID = int(os.getenv("OPORTUNIDADES_CHANNEL_ID", "0"))
 
 DEBUG = "--debug" in sys.argv
 
@@ -71,4 +72,19 @@ KEYWORDS_BLOCK = [
     "celebrity", "kardashian", "entertainment", "grammy", "oscar",
     "fashion", "beauty", "cooking", "recipe", "travel", "tourism",
     "weather", "horoscope", "zodiac", "reality tv",
+]
+
+# ─── Oportunidades de projeto (JONES) ────────
+OPPORTUNITIES_SOURCES = [
+    {"name": "Workana BR",  "color": 0xF39C12,
+     "rss": "https://www.workana.com/jobs.rss?language=pt&category=it-programming"},
+    {"name": "Upwork Dev",  "color": 0x14A800,
+     "rss": "https://www.upwork.com/ab/feed/jobs/rss?sort=recency&category2_uid=531770282580668418"},
+]
+
+KEYWORDS_OPPORTUNITIES = [
+    "react", "python", "node", "typescript", "next", "vue", "django", "flask",
+    "mobile", "aplicativo", "app", "api", "backend", "frontend", "fullstack",
+    "desenvolvimento web", "sistema", "landing page", "e-commerce", "website",
+    "software", "web", "javascript", "php", "laravel",
 ]
