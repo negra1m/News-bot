@@ -14,8 +14,8 @@ class TextCommandsCog(commands.Cog):
         self.state         = state
         self.voice_session = voice_session
 
-    @commands.command(name="ajuda")
-    async def cmd_ajuda(self, ctx):
+    @commands.command(name="comandos", aliases=["ajuda", "help"])
+    async def cmd_comandos(self, ctx):
         embed = discord.Embed(
             description=(
                 "**📋 Comandos disponíveis**\n\n"
