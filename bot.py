@@ -59,6 +59,7 @@ async def on_ready():
     from cogs.text_commands import TextCommandsCog
     from cogs.voice import VoiceCog
     from cogs.opportunities import OpportunitiesCog
+    from cogs.admin import AdminCog
 
     if not bot.get_cog("RSSCog"):
         await bot.add_cog(RSSCog(bot, state))
@@ -68,6 +69,8 @@ async def on_ready():
         await bot.add_cog(VoiceCog(bot, voice_session))
     if not bot.get_cog("OpportunitiesCog"):
         await bot.add_cog(OpportunitiesCog(bot))
+    if not bot.get_cog("AdminCog"):
+        await bot.add_cog(AdminCog(bot))
 
     print("[BOT] Cogs carregados. Pronto.")
 

@@ -18,15 +18,25 @@ class TextCommandsCog(commands.Cog):
     async def cmd_ajuda(self, ctx):
         embed = discord.Embed(
             description=(
-                "**📋 Comandos disponíveis**\n"
+                "**📋 Comandos disponíveis**\n\n"
+                "**Notícias**\n"
                 "`!status` — situação atual do bot\n"
-                "`!forcenow` — forçar ciclo imediatamente\n"
-                "`!pausar` — pausar envio de notícias\n"
-                "`!resumir` — retomar envio\n"
-                "`!fontes` — listar fontes ativas\n"
+                "`!forcenow` — forçar ciclo de notícias agora\n"
+                "`!pausar` / `!resumir` — pausar/retomar envio\n"
+                "`!fontes` — listar fontes ativas\n\n"
+                "**Oportunidades**\n"
+                "`!oportunidades` — buscar oportunidades agora\n\n"
+                "**Reuniões**\n"
                 "`!reuniao` — entrar no canal de voz e gravar\n"
-                "`!parar` — parar gravação e transcrever\n"
-                "`!ajuda` — esta mensagem"
+                "`!parar` — parar gravação e transcrever\n\n"
+                "**Configuração**\n"
+                "`!conf` — ver config atual\n"
+                "`!conf canal opp <id>` — definir canal de oportunidades\n"
+                "`!conf opp add <nome> <url>` — adicionar fonte\n"
+                "`!conf opp del <nome>` — remover fonte\n"
+                "`!conf kw add <palavra>` — adicionar keyword\n"
+                "`!conf kw del <palavra>` — remover keyword\n"
+                "`!conf reset` — voltar aos defaults"
             ),
             color=0x5865F2, timestamp=datetime.now(timezone.utc))
         await ctx.send(embed=embed)

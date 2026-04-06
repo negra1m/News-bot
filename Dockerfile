@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY config.py db.py audio.py bot.py ./
+COPY config.py db.py audio.py bot.py runtime_config.py ./
 COPY cogs/ ./cogs/
 
 CMD ["python", "-u", "bot.py"]
