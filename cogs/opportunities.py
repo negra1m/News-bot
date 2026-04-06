@@ -130,14 +130,18 @@ class OpportunitiesCog(commands.Cog):
     async def before_opp(self):
         await self.bot.wait_until_ready()
 
-    async def _buscar_e_enviar(self) -> int:
+    async def _buscar_e_enviar(self, max_posts=3) -> int:
         sources  = runtime_config.get_opp_sources()
         keywords = runtime_config.get_opp_keywords()
         loop     = asyncio.get_event_loop()
         total    = 0
         for source in sources:
+            if total >= max_posts:
+                break
             posts = await loop.run_in_executor(None, fetch_opportunities, source, keywords)
             for post in posts:
+                if total >= max_posts:
+                    break
                 ok = await loop.run_in_executor(
                     None, _send_webhook, post, OPORTUNIDADES_WEBHOOK_URL)
                 if ok:
