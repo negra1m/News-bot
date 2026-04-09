@@ -5,7 +5,10 @@ Sobrepõe os defaults do config.py sem precisar de redeploy.
 
 import json
 from pathlib import Path
-from config import OPPORTUNITIES_SOURCES, KEYWORDS_OPPORTUNITIES, OPORTUNIDADES_CHANNEL_ID
+from config import (
+    OPPORTUNITIES_SOURCES, KEYWORDS_OPPORTUNITIES, OPORTUNIDADES_CHANNEL_ID,
+    NEWS_SOURCES,
+)
 
 _CONFIG_PATH = (
     Path("/app/data/bot_config.json")
@@ -17,6 +20,7 @@ _DEFAULTS = {
     "opp_channel_id": None,   # None → usa OPORTUNIDADES_CHANNEL_ID do env
     "opp_sources":    None,   # None → usa OPPORTUNITIES_SOURCES do config.py
     "opp_keywords":   None,   # None → usa KEYWORDS_OPPORTUNITIES do config.py
+    "news_sources":   None,   # None → usa NEWS_SOURCES do config.py
 }
 
 
@@ -49,6 +53,10 @@ def get_opp_keywords() -> list:
     v = _load()["opp_keywords"]
     return v if v is not None else list(KEYWORDS_OPPORTUNITIES)
 
+def get_news_sources() -> list:
+    v = _load()["news_sources"]
+    return v if v is not None else list(NEWS_SOURCES)
+
 
 # ─── Setters ─────────────────────────────────
 
@@ -60,6 +68,9 @@ def set_opp_sources(val: list):
 
 def set_opp_keywords(val: list):
     cfg = _load(); cfg["opp_keywords"] = val; _save(cfg)
+
+def set_news_sources(val: list):
+    cfg = _load(); cfg["news_sources"] = val; _save(cfg)
 
 def reset():
     if _CONFIG_PATH.exists():

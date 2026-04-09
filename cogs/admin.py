@@ -1,15 +1,14 @@
 """
 Cog de configuração em runtime — comandos !conf.
 
-!conf                        → mostra config atual
-!conf canal opp <id>         → define canal de oportunidades
-!conf opp list               → lista fontes de oportunidades
-!conf opp add <nome> <url>   → adiciona fonte
-!conf opp del <nome>         → remove fonte
-!conf kw list                → lista keywords de oportunidades
-!conf kw add <palavra>       → adiciona keyword
-!conf kw del <palavra>       → remove keyword
-!conf reset                  → volta tudo ao padrão
+!conf                              → mostra config atual
+!conf canal opp <id>               → define canal de oportunidades
+!conf opp list/add/del             → gerenciar fontes de oportunidades
+!conf kw list/add/del              → gerenciar keywords de oportunidades
+!conf reddit add <sub> opp|news    → adicionar subreddit (oportunidades ou notícias)
+!conf reddit del <sub> opp|news    → remover subreddit
+!conf reddit list                  → listar subreddits ativos
+!conf reset                        → volta tudo ao padrão
 """
 
 import discord
@@ -150,6 +149,91 @@ class AdminCog(commands.Cog):
         kws.remove(keyword)
         runtime_config.set_opp_keywords(kws)
         await ctx.send(embed=_embed(f"✅ Keyword `{keyword}` removida. ({len(kws)} total)", color=0x51CF66))
+
+    # ─── !conf reddit ────────────────────────
+
+    @cmd_conf.group(name="reddit", invoke_without_command=True)
+    async def conf_reddit(self, ctx):
+        opp_subs = [s for s in runtime_config.get_opp_sources() if "reddit.com" in s.get("rss", "")]
+        news_subs = [s for s in runtime_config.get_news_sources() if "reddit.com" in s.get("rss", "")]
+        lines = []
+        if opp_subs:
+            lines.append("**Oportunidades:**")
+            lines.extend(f"  • `{s['name']}`" for s in opp_subs)
+        if news_subs:
+            lines.append("**Notícias:**")
+            lines.extend(f"  • `{s['name']}`" for s in news_subs)
+        if not lines:
+            lines.append("Nenhum subreddit configurado.")
+        lines.append("\n`!conf reddit add <sub> opp` · `!conf reddit add <sub> news`")
+        lines.append("`!conf reddit del <sub> opp` · `!conf reddit del <sub> news`")
+        await ctx.send(embed=_embed("\n".join(lines)))
+
+    @conf_reddit.command(name="list")
+    async def conf_reddit_list(self, ctx):
+        await self.conf_reddit(ctx)
+
+    @conf_reddit.command(name="add")
+    async def conf_reddit_add(self, ctx, sub: str, tipo: str = "news"):
+        sub = sub.strip().lstrip("r/")
+        tipo = tipo.lower()
+        if tipo not in ("opp", "news"):
+            await ctx.send(embed=_embed("❌ Tipo deve ser `opp` ou `news`.", color=0xFF4444))
+            return
+
+        if tipo == "opp":
+            rss_url = f"https://www.reddit.com/r/{sub}/search.rss?q=flair%3AHiring&restrict_sr=on&sort=new"
+        else:
+            rss_url = f"https://www.reddit.com/r/{sub}/hot/.rss"
+
+        name = f"r/{sub}"
+        source = {"name": name, "color": 0xFF4500, "rss": rss_url}
+
+        if tipo == "opp":
+            sources = list(runtime_config.get_opp_sources())
+            if any(s["name"].lower() == name.lower() for s in sources):
+                await ctx.send(embed=_embed(f"— `{name}` já está nas oportunidades.", color=0xFCC419))
+                return
+            sources.append(source)
+            runtime_config.set_opp_sources(sources)
+        else:
+            sources = list(runtime_config.get_news_sources())
+            if any(s["name"].lower() == name.lower() for s in sources):
+                await ctx.send(embed=_embed(f"— `{name}` já está nas notícias.", color=0xFCC419))
+                return
+            sources.append(source)
+            runtime_config.set_news_sources(sources)
+
+        await ctx.send(embed=_embed(
+            f"✅ `{name}` adicionado às **{'oportunidades' if tipo == 'opp' else 'notícias'}**.\n"
+            f"RSS: `{rss_url[:70]}...`", color=0x51CF66))
+
+    @conf_reddit.command(name="del")
+    async def conf_reddit_del(self, ctx, sub: str, tipo: str = "news"):
+        sub = sub.strip().lstrip("r/")
+        tipo = tipo.lower()
+        name = f"r/{sub}"
+
+        if tipo == "opp":
+            sources = list(runtime_config.get_opp_sources())
+            nova = [s for s in sources if s["name"].lower() != name.lower()]
+            if len(nova) == len(sources):
+                await ctx.send(embed=_embed(f"❌ `{name}` não encontrado nas oportunidades.", color=0xFF4444))
+                return
+            runtime_config.set_opp_sources(nova)
+        elif tipo == "news":
+            sources = list(runtime_config.get_news_sources())
+            nova = [s for s in sources if s["name"].lower() != name.lower()]
+            if len(nova) == len(sources):
+                await ctx.send(embed=_embed(f"❌ `{name}` não encontrado nas notícias.", color=0xFF4444))
+                return
+            runtime_config.set_news_sources(nova)
+        else:
+            await ctx.send(embed=_embed("❌ Tipo deve ser `opp` ou `news`.", color=0xFF4444))
+            return
+
+        await ctx.send(embed=_embed(
+            f"✅ `{name}` removido das **{'oportunidades' if tipo == 'opp' else 'notícias'}**.", color=0x51CF66))
 
     # ─── !conf reset ─────────────────────────
 

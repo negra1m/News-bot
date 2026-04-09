@@ -31,11 +31,11 @@ class TextCommandsCog(commands.Cog):
                 "`!parar` — parar gravação e transcrever\n\n"
                 "**Configuração**\n"
                 "`!conf` — ver config atual\n"
-                "`!conf canal opp <id>` — definir canal de oportunidades\n"
-                "`!conf opp add <nome> <url>` — adicionar fonte\n"
-                "`!conf opp del <nome>` — remover fonte\n"
-                "`!conf kw add <palavra>` — adicionar keyword\n"
-                "`!conf kw del <palavra>` — remover keyword\n"
+                "`!conf opp add/del` — fontes de oportunidades\n"
+                "`!conf kw add/del` — keywords de busca\n"
+                "`!conf reddit add <sub> opp|news` — adicionar subreddit\n"
+                "`!conf reddit del <sub> opp|news` — remover subreddit\n"
+                "`!conf reddit list` — ver subreddits ativos\n"
                 "`!conf reset` — voltar aos defaults"
             ),
             color=0x5865F2, timestamp=datetime.now(timezone.utc))

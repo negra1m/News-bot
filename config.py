@@ -36,6 +36,17 @@ NEWS_SOURCES = [
      "rss": "https://www.therundown.ai/feed"},
     {"name": "Product Hunt AI",   "color": 0xDA552F,
      "rss": "https://www.producthunt.com/feed?category=artificial-intelligence"},
+    # Reddit underground AI
+    {"name": "r/LocalLLaMA",      "color": 0xFF6B6B,
+     "rss": "https://www.reddit.com/r/LocalLLaMA/hot/.rss"},
+    {"name": "r/singularity",     "color": 0xA29BFE,
+     "rss": "https://www.reddit.com/r/singularity/hot/.rss"},
+    {"name": "r/ClaudeAI",        "color": 0xCC785C,
+     "rss": "https://www.reddit.com/r/ClaudeAI/hot/.rss"},
+    {"name": "r/ollama",          "color": 0x55EFC4,
+     "rss": "https://www.reddit.com/r/ollama/hot/.rss"},
+    {"name": "r/artificial",      "color": 0x636E72,
+     "rss": "https://www.reddit.com/r/artificial/hot/.rss"},
 ]
 
 # ─── Constantes ──────────────────────────────
@@ -57,6 +68,7 @@ TRUSTED_SOURCES = [
     "Anthropic", "Google AI", "DeepMind",
     "Verge", "TechCrunch", "Wired", "Axios",
     "Rundown", "Product Hunt",
+    "LocalLLaMA", "singularity", "ClaudeAI", "ollama", "artificial",
 ]
 
 KEYWORDS_TECH = [
@@ -84,6 +96,8 @@ OPPORTUNITIES_SOURCES = [
      "rss": "https://weworkremotely.com/categories/remote-programming-jobs.rss"},
     {"name": "Jobicy Dev",        "color": 0x0984E3,
      "rss": "https://jobicy.com/?feed=job_feed&job_categories=engineering"},
+    {"name": "Reddit r/forhire",  "color": 0xFF4500,
+     "rss": "https://www.reddit.com/r/forhire/search.rss?q=flair%3AHiring&restrict_sr=on&sort=new"},
 ]
 
 KEYWORDS_OPPORTUNITIES = [
